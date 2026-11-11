@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Help Desk</title>
+<style>
+:root{--bg:#f5f6fa;--ink:#1c2233;--mut:#5d667d;--line:#d8dce8;--acc:#3b4fc4;--bad:#b3261e;--card:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#12151f;--ink:#e6e9f5;--mut:#98a0b8;--line:#2a3045;--acc:#8f9dff;--bad:#ff8a80;--card:#1a1e2c}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 Georgia,serif;background:var(--bg);color:var(--ink)}
+main{max-width:920px;margin:0 auto;padding:24px 16px}h1{font-size:1.8rem;margin:0 0 4px}h2{font-size:1.1rem;margin:28px 0 8px}
+p.s{color:var(--mut);margin:0 0 12px}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}
+td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}
+input,button,select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button{background:var(--acc);color:#fff;border-color:var(--acc);cursor:pointer}@media(prefers-color-scheme:dark){button{color:#12151f}}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+#msg{min-height:1.5em;color:var(--acc)}.err{color:var(--bad)!important}.hide{display:none}.late{color:var(--bad);font-weight:bold}
+textarea{width:100%}.box{background:var(--card);border:1px solid var(--line);padding:12px}
+</style></head><body><main>
+<h1>Help Desk</h1><p class="s">Ask IT, HR or Facilities for help. Every request has a response deadline.</p>
+<div id="msg" role="status"></div>
+<section id="login"><div class="row"><input id="em" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+<button onclick="login('login')">Sign in</button><button onclick="login('register')">Create account</button></div>
+<p class="s">Demo accounts (password Passw0rd123): employee@demo.com, it@demo.com, hr@demo.com, facilities@demo.com, admin@demo.com</p></section>
+<section id="app" class="hide">
+<div class="row"><span id="who" class="s"></span><button onclick="out()">Sign out</button></div>
+<div id="dash" class="hide"><h2>Dashboard</h2><div id="kpi" class="box"></div></div>
+<h2>New request</h2><div class="box"><div class="row">
+<select id="cat"><option>IT</option><option>HR</option><option>Facilities</option></select>
+<select id="pri"><option>low</option><option selected>medium</option><option>high</option><option>urgent</option></select>
+<input id="ttl" placeholder="Short title" maxlength="120" style="flex:1"></div>
+<textarea id="dsc" rows="3" placeholder="What do you need?" maxlength="2000"></textarea>
+<p><button onclick="create()">Submit request</button></p></div>
+<h2>Requests</h2><table id="list"></table>
+<div id="detail" class="hide"><h2 id="dh"></h2><div class="box"><p id="dd"></p><div id="dc"></div>
+<div class="row"><input id="cm" placeholder="Add a comment" style="flex:1" maxlength="1000"><button onclick="comment()">Comment</button></div>
+<div id="ctl" class="row hide"><select id="stx"><option value="">Change status</option><option value="in_progress">in_progress</option><option value="resolved">resolved</option><option value="closed">closed</option></select><button onclick="setStatus()">Update</button></div></div></div>
+<div id="adm" class="hide"><h2>Audit log</h2><table id="aud"></table></div></section>
+<script>
+let T=localStorage.t,R=localStorage.r,CUR=null;const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $m=(t,e)=>{$('msg').textContent=t;$('msg').className=e?'err':''};
+async function api(p,o={}){const r=await fetch('/api'+p,{...o,headers:{'Content-Type':'application/json',Authorization:'Bearer '+T},body:o.body&&JSON.stringify(o.body)});
+ if(r.status==401&&T){out();return}const d=r.status==204?null:await r.json();if(!r.ok)throw new Error(d.error);return d}
+async function login(k){try{const d=await api('/auth/'+k,{method:'POST',body:{email:$('em').value,password:$('pw').value}});T=localStorage.t=d.token;R=localStorage.r=d.role;$m('');load()}catch(e){$m(e.message,1)}}
+function out(){localStorage.clear();T=R=null;$('app').classList.add('hide');$('login').classList.remove('hide')}
+const rows=(a,f,h)=>'<tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr>'+(a.length?a.map(f).join(''):'<tr><td colspan='+h.length+'>Nothing here yet.</td></tr>');
+const due=t=>`<span class="${t.sla_breached?'late':''}">${new Date(t.due_at).toLocaleString()}${t.sla_breached?' (SLA missed)':''}</span>`;
+async function load(){if(!T)return;try{
+ $('login').classList.add('hide');$('app').classList.remove('hide');$('who').textContent='Signed in as '+R;
+ const staff=R!='employee';$('dash').classList.toggle('hide',!staff);$('ctl').classList.toggle('hide',!staff);$('adm').classList.toggle('hide',R!='admin');
+ const l=await api('/tickets');
+ $('list').innerHTML=rows(l,x=>`<tr><td>#${x.id}</td><td>${esc(x.title)}</td><td>${x.category}</td><td>${x.priority}</td><td>${x.status}</td><td>${esc(x.assignee||'unassigned')}</td><td>${due(x)}</td><td><button onclick="view(${x.id})">Open</button></td></tr>`,['ID','Title','Team','Priority','Status','Assigned to','Respond by','']);
+ if(staff){const d=await api('/dashboard');$('kpi').innerHTML=`Total <b>${d.total}</b> | SLA met <b>${d.sla_compliance_pct}%</b> | Missed <b>${d.breached}</b> | Avg resolution <b>${d.avg_resolution_hours??'n/a'} h</b><br>`+d.byStatus.map(x=>x.status+': '+x.n).join(' | ')+'<br>'+d.byCategory.map(x=>x.category+': '+x.n).join(' | ')}
+ if(R=='admin')$('aud').innerHTML=rows(await api('/audit'),x=>`<tr><td>${new Date(x.created_at).toLocaleString()}</td><td>${x.user_id??''}</td><td>${esc(x.action)} ${esc(x.entity)} ${x.entity_id??''}</td></tr>`,['Time','User','Action']);
+ if(CUR)view(CUR);
+}catch(e){$m(e.message,1)}}
+async function view(id){try{CUR=id;const t=await api('/tickets/'+id);$('detail').classList.remove('hide');$('dh').textContent='#'+t.id+' '+t.title;$('dd').textContent=t.description;
+ $('dc').innerHTML=t.comments.map(c=>`<p><b>${esc(c.email)}</b>: ${esc(c.body)}</p>`).join('')||'<p class="s">No comments yet.</p>'}catch(e){$m(e.message,1)}}
+const act=f=>async()=>{try{await f();load()}catch(e){$m(e.message,1)}};
+const create=act(()=>api('/tickets',{method:'POST',body:{category:$('cat').value,priority:$('pri').value,title:$('ttl').value,description:$('dsc').value}}).then(t=>{$m('Request #'+t.id+' submitted');$('ttl').value=$('dsc').value=''}));
+const comment=act(()=>api(`/tickets/${CUR}/comments`,{method:'POST',body:{body:$('cm').value}}).then(()=>$('cm').value=''));
+const setStatus=act(()=>$('stx').value&&api('/tickets/'+CUR,{method:'PATCH',body:{status:$('stx').value}}).then(()=>$m('Status updated')));
+load();</script></main></body></html>
